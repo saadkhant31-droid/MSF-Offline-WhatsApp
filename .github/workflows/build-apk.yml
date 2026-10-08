@@ -25,7 +25,10 @@ jobs:
       - name: Unzip project
         run: |
           ls -la
-          unzip -oq ./MSF-Offline-WhatsApp.zip -d project
+          ZIP=$(ls -t *.zip | head -1)
+          echo "Using: $ZIP"
+          rm -rf project
+          unzip -oq "$ZIP" -d project
 
       - name: Build debug APK
         run: |
