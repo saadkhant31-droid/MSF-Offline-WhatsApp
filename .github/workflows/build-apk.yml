@@ -25,15 +25,16 @@ jobs:
       - name: Unzip project
         run: |
           ls -la
-          unzip -oq ./*.zip -d project
+          unzip -oq ./MSF-Offline-WhatsApp.zip -d project
 
       - name: Build debug APK
         run: |
-          DIR=$(dirname "$(find project -name settings.gradle | head -1)")
+          set -o pipefail
+          F=$(find project -name 'settings.gradle*' | head -1)
+          DIR=$(dirname "$F")
           echo "=== Building in: $DIR ==="
           cd "$DIR"
-          gradle assembleDebug --console=plain 2>&1 | tail -n 25
-          exit ${PIPESTATUS[0]}
+          gradle assembleDebug --console=plain 2>&1 | tail -n 80
 
       - uses: actions/upload-artifact@v4
         with:
