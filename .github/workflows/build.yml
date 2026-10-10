@@ -11,6 +11,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # اگر ریپو میں صرف zip فائل اپلوڈ کی ہو تو اسے خود کھول لیتا ہے
+      - name: Unpack app zip (if needed)
+        run: |
+          if [ -z "$(find . -name pubspec.yaml -not -path './.*' | head -1)" ]; then
+            Z=$(find . -maxdepth 2 -name '*.zip' | head -1)
+            if [ -n "$Z" ]; then
+              echo "Unzipping $Z"
+              mkdir -p app_src && unzip -q "$Z" -d app_src
+            fi
+          fi
+
       # ایپ کی فائلیں (pubspec.yaml) جہاں بھی ہوں، خود ڈھونڈ لیتا ہے
       - name: Find Flutter project
         id: proj
