@@ -11,6 +11,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ایپ کی فائلیں (pubspec.yaml) جہاں بھی ہوں، خود ڈھونڈ لیتا ہے
+      - name: Find Flutter project
+        id: proj
+        run: |
+          F=$(find . -name pubspec.yaml -not -path "*/.*" -not -path "*/build/*" | head -1)
+          if [ -z "$F" ]; then
+            echo "ERROR: pubspec.yaml not found. Upload the app files (lib, pubspec.yaml, assets, android_native) to the repository."
+            exit 1
+          fi
+          echo "dir=$(dirname "$F")" >> "$GITHUB_OUTPUT"
+          echo "Project dir: $(dirname "$F")"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -21,8 +33,8 @@ jobs:
           channel: stable
           cache: true
 
-      # اینڈرائیڈ فولڈر خود بناتا ہے (lib اور pubspec محفوظ رکھتا ہے)
       - name: Create android project
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: |
           mkdir -p /tmp/keep && cp -r lib pubspec.yaml /tmp/keep/
           flutter create . --org com.msf --project-name namaz_app --platforms=android
@@ -30,15 +42,22 @@ jobs:
           cp -r /tmp/keep/lib ./lib && cp /tmp/keep/pubspec.yaml ./pubspec.yaml
 
       - name: Add live wallpaper + permissions
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: python3 android_native/setup_android.py
 
-      - run: flutter pub get
-      - run: dart run flutter_launcher_icons
+      - name: Get packages
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: flutter pub get
+
+      - name: Make launcher icons
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: dart run flutter_launcher_icons
 
       - name: Build release APK
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
         with:
           name: msf-prayer-app-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: ${{ steps.proj.outputs.dir }}/build/app/outputs/flutter-apk/app-release.apk
