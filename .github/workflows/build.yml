@@ -9,6 +9,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Locate project root
+        run: |
+          P=$(find . -maxdepth 3 -name pubspec.yaml -not -path './.git/*' | head -n1)
+          if [ -z "$P" ]; then
+            echo "pubspec.yaml nahi mili"; ls -R | head -50; exit 1
+          fi
+          DIR=$(dirname "$P")
+          echo "Project dir: $DIR"
+          if [ "$DIR" != "." ]; then cp -a "$DIR"/. .; fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -16,20 +25,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - name: Backup my files
-        run: |
-          mkdir -p /tmp/src
-          cp pubspec.yaml /tmp/src/
-          cp -r lib /tmp/src/lib
-          cp -r assets /tmp/src/assets
-      - name: Create android project
-        run: flutter create . --platforms=android --org com.msf --project-name msf_smart_storage
-      - name: Restore my files
-        run: |
-          cp /tmp/src/pubspec.yaml pubspec.yaml
-          rm -rf lib assets test
-          cp -r /tmp/src/lib lib
-          cp -r /tmp/src/assets assets
+      - run: flutter create . --platforms=android --org com.msf --project-name msf_smart_storage
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: sed -i 's/android:label="[^"]*"/android:label="MSF Smart Storage"/' android/app/src/main/AndroidManifest.xml
