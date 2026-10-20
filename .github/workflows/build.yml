@@ -27,6 +27,12 @@ jobs:
         with:
           channel: stable
       - run: flutter create . --platforms=android --org com.msf --project-name msf_smart_storage
+      - name: Fix compileSdk
+        run: |
+          F=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -n1)
+          echo "File: $F"
+          sed -i -E 's/compileSdk(Version)?[ =]+flutter\.compileSdkVersion/compileSdk = 36/' "$F"
+          grep -n "compileSdk" "$F"
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: sed -i 's/android:label="[^"]*"/android:label="MSF Smart Storage"/' android/app/src/main/AndroidManifest.xml
