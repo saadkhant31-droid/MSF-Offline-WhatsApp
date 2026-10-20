@@ -9,8 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Locate project root
+      - name: Unzip and locate project
         run: |
+          for z in *.zip; do [ -f "$z" ] && unzip -o -q "$z"; done
           P=$(find . -maxdepth 3 -name pubspec.yaml -not -path './.git/*' | head -n1)
           if [ -z "$P" ]; then
             echo "pubspec.yaml nahi mili"; ls -R | head -50; exit 1
