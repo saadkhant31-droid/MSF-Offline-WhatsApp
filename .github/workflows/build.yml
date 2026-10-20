@@ -16,7 +16,20 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: flutter create . --platforms=android --org com.msf --project-name msf_smart_storage
+      - name: Backup my files
+        run: |
+          mkdir -p /tmp/src
+          cp pubspec.yaml /tmp/src/
+          cp -r lib /tmp/src/lib
+          cp -r assets /tmp/src/assets
+      - name: Create android project
+        run: flutter create . --platforms=android --org com.msf --project-name msf_smart_storage
+      - name: Restore my files
+        run: |
+          cp /tmp/src/pubspec.yaml pubspec.yaml
+          rm -rf lib assets test
+          cp -r /tmp/src/lib lib
+          cp -r /tmp/src/assets assets
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - run: sed -i 's/android:label="[^"]*"/android:label="MSF Smart Storage"/' android/app/src/main/AndroidManifest.xml
