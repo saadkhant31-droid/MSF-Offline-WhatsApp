@@ -34,12 +34,15 @@ jobs:
             --platforms=android \
             --project-name msf_nimaz_ki_record \
             --org com.msf \
-            .
+            msf_app
 
       - name: Add local storage
+        working-directory: msf_app
         run: flutter pub add shared_preferences
 
-      - name: Create Prayer Record App
+      - name: Create prayer app
+        working-directory: msf_app
+        shell: bash
         run: |
           cat > lib/main.dart <<'EOF'
           import 'package:flutter/material.dart';
@@ -55,7 +58,7 @@ jobs:
             @override
             Widget build(BuildContext context) {
               return MaterialApp(
-                title: 'MSF نماز کی ریکارڈ',
+                title: 'MSF نماز ریکارڈ',
                 debugShowCheckedModeBanner: false,
                 theme: ThemeData(
                   colorScheme: ColorScheme.fromSeed(
@@ -86,28 +89,37 @@ jobs:
 
             Map<String, bool> records = {};
             bool loading = true;
+
             late String dayKey;
 
             @override
             void initState() {
               super.initState();
+
               final now = DateTime.now();
+
               dayKey =
                   '${now.year}-${now.month}-${now.day}';
+
               loadRecords();
             }
 
             Future<void> loadRecords() async {
-              final prefs = await SharedPreferences.getInstance();
+              final prefs =
+                  await SharedPreferences.getInstance();
+
+              final loaded = <String, bool>{};
 
               for (int i = 0; i < prayers.length; i++) {
-                records[prayers[i]] =
-                    prefs.getBool('${dayKey}_prayer_$i') ?? false;
+                loaded[prayers[i]] =
+                    prefs.getBool('${dayKey}_prayer_$i')
+                        ?? false;
               }
 
               if (!mounted) return;
 
               setState(() {
+                records = loaded;
                 loading = false;
               });
             }
@@ -116,6 +128,173 @@ jobs:
               int index,
               bool value,
             ) async {
-              final prefs = await SharedPreferences.getInstance();
+              final prefs =
+                  await SharedPreferences.getInstance();
 
               await prefs.setBool(
+                '${dayKey}_prayer_$index',
+                value,
+              );
+
+              if (!mounted) return;
+
+              setState(() {
+                records[prayers[index]] = value;
+              });
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              final completed = records.values
+                  .where((value) => value)
+                  .length;
+
+              return Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(
+                  appBar: AppBar(
+                    title: const Text(
+                      'MSF نماز کی ریکارڈ',
+                    ),
+                    centerTitle: true,
+                  ),
+                  body: loading
+                      ? const Center(
+                          child: CircularProgressIndicator(),
+                        )
+                      : ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(20),
+                                child: Column(
+                                  children: [
+                                    const Icon(
+                                      Icons.mosque,
+                                      size: 65,
+                                      color: Colors.green,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'روزانہ نمازوں کا ریکارڈ',
+                                      style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight:
+                                            FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'آج کی پڑھی ہوئی نمازیں: '
+                                      '$completed / 5',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    LinearProgressIndicator(
+                                      value: completed / 5,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'پانچ وقت کی نماز',
+                              style: TextStyle(
+                                fontSize: 21,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            for (int i = 0;
+                                i < prayers.length;
+                                i++)
+                              Card(
+                                child: CheckboxListTile(
+                                  value:
+                                      records[prayers[i]] ?? false,
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      savePrayer(i, value);
+                                    }
+                                  },
+                                  title: Text(
+                                    'نماز ${prayers[i]}',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                  secondary: const Icon(
+                                    Icons.check_circle,
+                                    color: Colors.green,
+                                  ),
+                                  controlAffinity:
+                                      ListTileControlAffinity
+                                          .leading,
+                                ),
+                              ),
+                            const SizedBox(height: 20),
+                            const Center(
+                              child: Text(
+                                'MSF Smart Storage',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              );
+            }
+          }
+          EOF
+
+      - name: Set application name
+        working-directory: msf_app
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path(
+              "android/app/src/main/AndroidManifest.xml"
+          )
+
+          s = p.read_text()
+
+          s = s.replace(
+              'android:label="msf_nimaz_ki_record"',
+              'android:label="MSF Nimaz ki Record"'
+          )
+
+          s = s.replace(
+              'android:label="Runner"',
+              'android:label="MSF Nimaz ki Record"'
+          )
+
+          p.write_text(s)
+          PY
+
+      - name: Get dependencies
+        working-directory: msf_app
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: msf_app
+        run: flutter build apk --release
+
+      - name: Verify APK exists
+        run: |
+          test -f \
+            msf_app/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload APK for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: MSF-Nimaz-ki-Record-APK
+          path: msf_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
