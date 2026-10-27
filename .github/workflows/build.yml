@@ -1,4 +1,4 @@
-name: Build MSF Nimaz ki Record APK
+name: Build MSF Nimaz APK
 
 on:
   push:
@@ -10,14 +10,54 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout project
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Find Flutter project
+        shell: bash
+        run: |
+          set -e
+
+          if [ -f pubspec.yaml ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+          else
+            FOUND=""
+
+            while IFS= read -r file; do
+              FOUND="$(dirname "$file")"
+              break
+            done < <(find . -name pubspec.yaml \
+              -not -path './.git/*' \
+              -not -path './build/*')
+
+            if [ -z "$FOUND" ]; then
+              mkdir -p /tmp/msf_extract
+
+              while IFS= read -r archive; do
+                unzip -oq "$archive" -d /tmp/msf_extract || true
+              done < <(find . -maxdepth 3 -type f -name '*.zip')
+
+              FOUND="$(find /tmp/msf_extract \
+                -name pubspec.yaml -print -quit)"
+
+              if [ -n "$FOUND" ]; then
+                FOUND="$(dirname "$FOUND")"
+              fi
+            fi
+
+            if [ -z "$FOUND" ]; then
+              echo "ERROR: Flutter project not found."
+              echo "Upload the extracted project files or ZIP."
+              exit 1
+            fi
+
+            echo "PROJECT_DIR=$FOUND" >> "$GITHUB_ENV"
+          fi
+
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -29,85 +69,34 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Verify Flutter source files
-        shell: bash
+      - name: Verify Flutter files
         run: |
           set -e
-          test -f pubspec.yaml || { echo "ERROR: pubspec.yaml missing from repository root"; exit 1; }
-          test -f lib/main.dart || { echo "ERROR: lib/main.dart missing"; exit 1; }
-          test -d assets || { echo "ERROR: assets folder missing"; exit 1; }
-          echo "Flutter source files found."
+          test -f "$PROJECT_DIR/pubspec.yaml"
+          test -f "$PROJECT_DIR/lib/main.dart"
+          echo "Flutter project found: $PROJECT_DIR"
 
-      - name: Generate Android platform folder
-        shell: bash
+      - name: Generate Android files if missing
         run: |
-          set -e
-          flutter create \
-            --platforms=android \
-            --project-name msf_nimaz_ki_record \
-            --org com.msf \
-            /tmp/msf_android_scaffold
-          cp -a /tmp/msf_android_scaffold/android ./android
+          if [ ! -d "$PROJECT_DIR/android" ]; then
+            cd "$PROJECT_DIR"
+            flutter create \
+              --platforms=android \
+              --project-name msf_nimaz_ki_record \
+              --org com.msf \
+              .
+          fi
 
-      - name: Configure Android app and icons
-        shell: bash
+      - name: Build APK
         run: |
-          set -e
-          python3 - <<'PY'
-          from pathlib import Path
+          cd "$PROJECT_DIR"
+          flutter pub get
+          flutter build apk --release
 
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          content = manifest.read_text()
-
-          permissions = [
-              '    <uses-permission android:name="android.permission.INTERNET"/>',
-              '    <uses-permission android:name="com.android.alarm.permission.SET_ALARM"/>',
-          ]
-          for permission in permissions:
-              if permission not in content:
-                  content = content.replace(
-                      '<application',
-                      permission + '\n    <application',
-                      1
-                  )
-
-          import re
-          content = re.sub(
-              r'android:label="[^"]*"',
-              'android:label="MSF Nimaz ki Record"',
-              content,
-              count=1
-          )
-          manifest.write_text(content)
-          PY
-
-          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            source="icons/${density}.png"
-            target="android/app/src/main/res/mipmap-${density}/ic_launcher.png"
-            if [ -f "$source" ] && [ -d "$(dirname "$target")" ]; then
-              cp "$source" "$target"
-            fi
-          done
-
-      - name: Resolve Flutter dependencies
-        run: flutter pub get
-
-      - name: Build release APK
-        run: flutter build apk --release
-
-      - name: Verify APK was created
-        shell: bash
-        run: |
-          set -e
-          APK="build/app/outputs/flutter-apk/app-release.apk"
-          test -s "$APK"
-          echo "APK successfully created:"
-          ls -lh "$APK"
-
-      - name: Upload APK download
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MSF-Nimaz-ki-Record-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
