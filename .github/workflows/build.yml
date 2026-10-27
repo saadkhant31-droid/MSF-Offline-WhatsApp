@@ -1,9 +1,12 @@
-name: Build APK
+name: Build MSF Nimaz ki Record APK
 
 on:
   push:
     branches: [main, master]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -12,19 +15,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Check Flutter project files
-        run: |
-          if [ ! -f pubspec.yaml ]; then
-            echo "ERROR: pubspec.yaml not found in repository root."
-            exit 1
-          fi
-
-          if [ ! -f lib/main.dart ]; then
-            echo "ERROR: lib/main.dart not found."
-            echo "Upload your Flutter app source code first."
-            exit 1
-          fi
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -38,7 +28,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate Android platform files
+      - name: Create Flutter project
         run: |
           flutter create \
             --platforms=android \
@@ -46,52 +36,86 @@ jobs:
             --org com.msf \
             .
 
-      - name: Configure Android app
+      - name: Add local storage
+        run: flutter pub add shared_preferences
+
+      - name: Create Prayer Record App
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          cat > lib/main.dart <<'EOF'
+          import 'package:flutter/material.dart';
+          import 'package:shared_preferences/shared_preferences.dart';
 
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
+          void main() {
+            runApp(const MSFApp());
+          }
 
-          permission = (
-              '<uses-permission '
-              'android:name="com.android.alarm.permission.SET_ALARM"/>'
-          )
+          class MSFApp extends StatelessWidget {
+            const MSFApp({super.key});
 
-          if permission not in s:
-              s = s.replace(
-                  '<application',
-                  permission + '\n    <application',
-                  1
-              )
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                title: 'MSF نماز کی ریکارڈ',
+                debugShowCheckedModeBanner: false,
+                theme: ThemeData(
+                  colorScheme: ColorScheme.fromSeed(
+                    seedColor: Colors.green,
+                  ),
+                  useMaterial3: true,
+                ),
+                home: const PrayerHome(),
+              );
+            }
+          }
 
-          s = s.replace(
-              'android:label="Runner"',
-              'android:label="MSF Nimaz ki Record"'
-          )
+          class PrayerHome extends StatefulWidget {
+            const PrayerHome({super.key});
 
-          p.write_text(s)
-          PY
+            @override
+            State<PrayerHome> createState() => _PrayerHomeState();
+          }
 
-      - name: Copy app icons if available
-        run: |
-          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            if [ -f "icons/$d.png" ]; then
-              cp "icons/$d.png" \
-                "android/app/src/main/res/mipmap-$d/ic_launcher.png"
-            fi
-          done
+          class _PrayerHomeState extends State<PrayerHome> {
+            final List<String> prayers = [
+              'فجر',
+              'ظہر',
+              'عصر',
+              'مغرب',
+              'عشاء',
+            ];
 
-      - name: Get dependencies
-        run: flutter pub get
+            Map<String, bool> records = {};
+            bool loading = true;
+            late String dayKey;
 
-      - name: Build release APK
-        run: flutter build apk --release
+            @override
+            void initState() {
+              super.initState();
+              final now = DateTime.now();
+              dayKey =
+                  '${now.year}-${now.month}-${now.day}';
+              loadRecords();
+            }
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MSF-Nimaz-ki-Record-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
+            Future<void> loadRecords() async {
+              final prefs = await SharedPreferences.getInstance();
+
+              for (int i = 0; i < prayers.length; i++) {
+                records[prayers[i]] =
+                    prefs.getBool('${dayKey}_prayer_$i') ?? false;
+              }
+
+              if (!mounted) return;
+
+              setState(() {
+                loading = false;
+              });
+            }
+
+            Future<void> savePrayer(
+              int index,
+              bool value,
+            ) async {
+              final prefs = await SharedPreferences.getInstance();
+
+              await prefs.setBool(
