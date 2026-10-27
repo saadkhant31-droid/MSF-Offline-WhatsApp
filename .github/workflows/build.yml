@@ -3,22 +3,11 @@ on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Unzip and locate project
-        run: |
-          for z in *.zip; do [ -f "$z" ] && unzip -o -q "$z"; done
-          P=$(find . -maxdepth 3 -name pubspec.yaml -not -path './.git/*' | head -n1)
-          if [ -z "$P" ]; then
-            echo "pubspec.yaml nahi mili"; ls -R | head -50; exit 1
-          fi
-          DIR=$(dirname "$P")
-          echo "Project dir: $DIR"
-          if [ "$DIR" != "." ]; then cp -a "$DIR"/. .; fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -26,18 +15,18 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: flutter create . --platforms=android --org com.msf --project-name msf_smart_storage
-      - name: Fix compileSdk
+          cache: true
+      - name: Generate Android platform files
         run: |
-          F=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -n1)
-          echo "File: $F"
-          sed -i -E 's/compileSdk(Version)?[ =]+flutter\.compileSdkVersion/compileSdk = 36/' "$F"
-          grep -n "compileSdk" "$F"
+          mkdir -p /tmp/bak && cp -r lib /tmp/bak/lib && cp pubspec.yaml /tmp/bak/pubspec.yaml
+          flutter create --platforms=android --project-name msf_nimaz_ki_record --org com.msf .
+          rm -rf lib test && cp -r /tmp/bak/lib lib && cp /tmp/bak/pubspec.yaml pubspec.yaml
+          sed -i '0,/<application/s|<application|<uses-permission android:name="com.android.alarm.permission.SET_ALARM"/>\n    <application|' android/app/src/main/AndroidManifest.xml
+          sed -i 's/android:label="[^"]*"/android:label="MSF Nimaz ki Record"/' android/app/src/main/AndroidManifest.xml
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do cp icons/$d.png android/app/src/main/res/mipmap-$d/ic_launcher.png; done
       - run: flutter pub get
-      - run: dart run flutter_launcher_icons
-      - run: sed -i 's/android:label="[^"]*"/android:label="MSF Smart Storage"/' android/app/src/main/AndroidManifest.xml
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
-          name: MSF-Smart-Storage-APK
+          name: MSF-Nimaz-ki-Record-APK
           path: build/app/outputs/flutter-apk/app-release.apk
