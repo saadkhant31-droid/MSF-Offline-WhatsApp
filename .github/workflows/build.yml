@@ -21,41 +21,56 @@ jobs:
         run: |
           set -e
 
+          FOUND=""
+
           if [ -f pubspec.yaml ]; then
-            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+            FOUND="."
           else
-            FOUND=""
-
-            while IFS= read -r file; do
-              FOUND="$(dirname "$file")"
-              break
-            done < <(find . -name pubspec.yaml \
+            FOUND=$(find . -type f -name pubspec.yaml \
               -not -path './.git/*' \
-              -not -path './build/*')
+              -not -path './build/*' \
+              -print -quit | xargs -r dirname)
 
-            if [ -z "$FOUND" ]; then
-              mkdir -p /tmp/msf_extract
-
-              while IFS= read -r archive; do
-                unzip -oq "$archive" -d /tmp/msf_extract || true
-              done < <(find . -maxdepth 3 -type f -name '*.zip')
-
-              FOUND="$(find /tmp/msf_extract \
-                -name pubspec.yaml -print -quit)"
-
-              if [ -n "$FOUND" ]; then
-                FOUND="$(dirname "$FOUND")"
-              fi
-            fi
-
-            if [ -z "$FOUND" ]; then
-              echo "ERROR: Flutter project not found."
-              echo "Upload the extracted project files or ZIP."
-              exit 1
-            fi
-
-            echo "PROJECT_DIR=$FOUND" >> "$GITHUB_ENV"
           fi
+
+          if [ -z "$FOUND" ]; then
+            echo "Searching ZIP files..."
+            mkdir -p /tmp/msf_extract
+
+            while IFS= read -r archive; do
+              unzip -oq "$archive" -d /tmp/msf_extract || true
+            done < <(find . -maxdepth 3 -type f -name '*.zip')
+
+            FOUND=$(find /tmp/msf_extract \
+              -type f -name pubspec.yaml \
+              -print -quit | xargs -r dirname)
+          fi
+
+          if [ -z "$FOUND" ]; then
+            echo "ERROR: Flutter project not found."
+            exit 1
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/msf_build"
+
+          if [ "$FOUND" = "." ]; then
+            cp -a . "$GITHUB_WORKSPACE/msf_build/"
+            rm -rf "$GITHUB_WORKSPACE/msf_build/.git"
+            PROJECT="$GITHUB_WORKSPACE/msf_build"
+          elif [[ "$FOUND" = /tmp/* ]]; then
+            cp -a "$FOUND/." "$GITHUB_WORKSPACE/msf_build/"
+            PROJECT="$GITHUB_WORKSPACE/msf_build"
+          else
+            cp -a "$FOUND/." "$GITHUB_WORKSPACE/msf_build/"
+            PROJECT="$GITHUB_WORKSPACE/msf_build"
+          fi
+
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+
+          test -f "$PROJECT/pubspec.yaml"
+          test -f "$PROJECT/lib/main.dart"
+
+          echo "Flutter project found successfully."
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -69,17 +84,18 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Verify Flutter files
+      - name: Show Flutter information
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Prepare Android project
+        shell: bash
         run: |
           set -e
-          test -f "$PROJECT_DIR/pubspec.yaml"
-          test -f "$PROJECT_DIR/lib/main.dart"
-          echo "Flutter project found: $PROJECT_DIR"
+          cd "$PROJECT_DIR"
 
-      - name: Generate Android files if missing
-        run: |
-          if [ ! -d "$PROJECT_DIR/android" ]; then
-            cd "$PROJECT_DIR"
+          if [ ! -d android ]; then
             flutter create \
               --platforms=android \
               --project-name msf_nimaz_ki_record \
@@ -87,16 +103,37 @@ jobs:
               .
           fi
 
-      - name: Build APK
+      - name: Get dependencies
         run: |
           cd "$PROJECT_DIR"
           flutter pub get
-          flutter build apk --release
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -o pipefail
+          cd "$PROJECT_DIR"
+          flutter build apk --release --verbose \
+            2>&1 | tee "$GITHUB_WORKSPACE/build-log.txt"
+
+      - name: Verify APK
+        run: |
+          test -s "$PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: MSF-Nimaz-ki-Record-APK
           path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload build log if failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MSF-Build-Error-Log
+          path: build-log.txt
+          if-no-files-found: warn
+          retention-days: 7
