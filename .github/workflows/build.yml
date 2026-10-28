@@ -103,6 +103,28 @@ jobs:
               .
           fi
 
+      - name: Apply app icon, name, permissions and live wallpaper
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          M=android/app/src/main/AndroidManifest.xml
+
+          # App icon (icons/*.png -> launcher icon)
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p android/app/src/main/res/mipmap-$d
+            cp icons/$d.png android/app/src/main/res/mipmap-$d/ic_launcher.png
+          done
+          # remove adaptive-icon xml if Flutter generated it, so our icon is used
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26 android/app/src/main/res/drawable-v21/launch_background.xml.bak 2>/dev/null || true
+
+          # App name + alarm permission
+          sed -i 's/android:label="[^"]*"/android:label="MSF Nimaz ki Record"/' "$M"
+          grep -q 'SET_ALARM' "$M" || sed -i '0,/<application/s|<application|<uses-permission android:name="com.android.alarm.permission.SET_ALARM"/>\n    <application|' "$M"
+
+          # Live wallpaper (Kotlin service + manifest)
+          bash native/android/patch_android.sh
+
       - name: Get dependencies
         run: |
           cd "$PROJECT_DIR"
